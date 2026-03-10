@@ -7,10 +7,11 @@ import { FileItem } from "./FileItem";
 import { SettingsDialog } from "./SettingsDialog";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Upload, Download, Sparkles, Files, Layers, Trash2 } from "lucide-react";
+import { Upload, Download, Sparkles, Files, Layers, Trash2, Cpu, Zap, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { aiImageCompression } from "@/ai/flows/ai-image-compression-flow";
 import { useToast } from "@/hooks/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function Uploader() {
   const [files, setFiles] = useState<ConversionFile[]>([]);
@@ -82,7 +83,6 @@ export function Uploader() {
     const filesToConvert = files.filter(f => f.status === 'idle');
     if (filesToConvert.length === 0) return;
 
-    // Dynamically import gifshot only on the client
     let gifshot: any = null;
     if (typeof window !== 'undefined') {
       const mod = await import('gifshot');
@@ -117,7 +117,6 @@ export function Uploader() {
         } else if (item.type === 'video' && item.outputFormat === 'GIF') {
           if (!gifshot) throw new Error("Conversion library not available.");
 
-          // 1. Get original video dimensions to fix "chopped" resolution
           const videoMeta = document.createElement('video');
           videoMeta.src = item.previewUrl;
           await new Promise((resolve) => {
@@ -126,9 +125,6 @@ export function Uploader() {
 
           const originalWidth = videoMeta.videoWidth;
           const originalHeight = videoMeta.videoHeight;
-          
-          // Target width while maintaining aspect ratio
-          // We limit max width to 800 for GIF performance, but keep original if smaller
           const targetWidth = Math.min(originalWidth, 800);
           const targetHeight = Math.round((originalHeight / originalWidth) * targetWidth);
 
@@ -139,9 +135,9 @@ export function Uploader() {
               video: [item.previewUrl],
               gifWidth: targetWidth,
               gifHeight: targetHeight,
-              numFrames: 40, // Increased frame count for smoother motion
-              frameDuration: 1, // 10fps
-              sampleInterval: 5, // Lower interval = higher quality colors, reduces Discord glitches
+              numFrames: 40,
+              frameDuration: 1,
+              sampleInterval: 5,
               progressCallback: (progress: number) => {
                 setFiles(prev => prev.map(f => f.id === item.id ? { ...f, progress: 15 + (progress * 80) } : f));
               }
@@ -160,10 +156,9 @@ export function Uploader() {
 
           toast({
             title: "Conversion Complete",
-            description: "High-quality GIF generated with preserved aspect ratio.",
+            description: "High-quality GIF generated.",
           });
         } else {
-          // Simulated Progress for other conversions (Mock)
           let currentProgress = 10;
           const interval = setInterval(() => {
             currentProgress += Math.random() * 15;
@@ -186,7 +181,7 @@ export function Uploader() {
         toast({
           variant: "destructive",
           title: "Conversion Failed",
-          description: "There was an error processing your file. Please try again.",
+          description: "There was an error processing your file.",
         });
       }
     }
@@ -218,15 +213,29 @@ export function Uploader() {
   const allCompleted = files.length > 0 && files.every(f => f.status === 'completed');
   const someProcessing = files.some(f => f.status === 'processing');
 
-  if (!isClient) return null;
+  if (!isClient) {
+    return (
+      <div className="w-full max-w-5xl mx-auto space-y-8 px-4 py-8">
+        <Skeleton className="h-[400px] w-full rounded-2xl glass" />
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full max-w-5xl mx-auto space-y-8 px-4 py-8">
+    <div className="w-full max-w-5xl mx-auto space-y-8 px-4 py-8 relative">
+      {/* Active Processing Indicator */}
+      {someProcessing && (
+        <div className="absolute -top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-primary/20 backdrop-blur-md px-4 py-1.5 rounded-full border border-primary/30 animate-in fade-in zoom-in duration-300">
+          <div className="w-2 h-2 bg-primary rounded-full animate-ping" />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-primary">System Processing</span>
+        </div>
+      )}
+
       {files.length === 0 && (
         <Card
           className={cn(
-            "relative group flex flex-col items-center justify-center min-h-[400px] border-2 border-dashed transition-all duration-500 glass",
-            isDragging ? "border-primary bg-primary/10 scale-[1.02] shadow-[0_0_50px_-10px_rgba(61,123,245,0.4)]" : "border-white/10 hover:border-primary/50"
+            "relative group flex flex-col items-center justify-center min-h-[420px] border-2 border-dashed transition-all duration-700 glass overflow-hidden",
+            isDragging ? "border-primary bg-primary/10 scale-[1.01] shadow-[0_0_80px_-20px_rgba(61,123,245,0.3)]" : "border-white/10 hover:border-primary/40"
           )}
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
           onDragLeave={() => setIsDragging(false)}
@@ -241,56 +250,65 @@ export function Uploader() {
             className="hidden" 
           />
           
+          {/* Background Highlight */}
+          <div className="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+          
           <div className="relative mb-6">
-            <div className="absolute -inset-4 bg-primary/20 rounded-full blur-2xl group-hover:bg-primary/40 transition-colors duration-500" />
-            <Upload className="w-16 h-16 text-primary neon-glow relative animate-pulse-subtle" />
+            <div className="absolute -inset-8 bg-primary/20 rounded-full blur-3xl group-hover:bg-primary/40 transition-colors duration-700 animate-pulse-subtle" />
+            <Upload className="w-20 h-20 text-primary neon-glow relative transition-transform duration-500 group-hover:scale-110" />
           </div>
           
-          <h2 className="text-2xl font-bold tracking-tight mb-2 text-foreground neon-text">
-            Drop your media here
+          <h2 className="text-3xl font-black tracking-tighter mb-2 text-foreground neon-text text-center px-4">
+            UNIVERSAL <span className="text-primary italic">UPLOAD</span>
           </h2>
-          <p className="text-muted-foreground text-center max-w-md px-6">
-            Upload videos or images for universal conversion. Supports MP4, MOV, MKV, JPG, PNG, WebP & more.
+          <p className="text-muted-foreground text-center max-w-md px-6 text-sm font-medium">
+            Drag & drop your media assets here to begin high-fidelity conversion.
           </p>
           
-          <div className="mt-8 flex gap-4 text-xs font-mono uppercase tracking-widest text-muted-foreground/50">
-            <span className="flex items-center gap-1"><Files className="w-3 h-3" /> Multiple Files</span>
-            <span className="flex items-center gap-1"><Layers className="w-3 h-3" /> Batch Settings</span>
-            <span className="flex items-center gap-1"><Sparkles className="w-3 h-3" /> AI Optimized</span>
+          <div className="mt-12 flex flex-wrap justify-center gap-6 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">
+            <div className="flex items-center gap-2 group/icon">
+              <Files className="w-3.5 h-3.5 group-hover/icon:text-primary transition-colors" /> Batch Mode
+            </div>
+            <div className="flex items-center gap-2 group/icon">
+              <Layers className="w-3.5 h-3.5 group-hover/icon:text-primary transition-colors" /> High Quality
+            </div>
+            <div className="flex items-center gap-2 group/icon">
+              <Sparkles className="w-3.5 h-3.5 group-hover/icon:text-primary transition-colors" /> AI Enhanced
+            </div>
           </div>
         </Card>
       )}
 
       {files.length > 0 && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="flex items-center justify-between bg-card/40 p-4 rounded-xl glass border-white/5">
-            <div className="flex items-center gap-4">
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="flex items-center justify-between bg-card/60 p-5 rounded-2xl glass border-white/10 shadow-xl">
+            <div className="flex items-center gap-3">
               <Button 
                 variant="outline" 
                 size="sm" 
                 onClick={() => fileInputRef.current?.click()}
-                className="bg-background/50 border-white/10 hover:border-primary/50"
+                className="bg-background/40 border-white/10 hover:border-primary/50 hover:bg-primary/10 transition-all rounded-lg"
               >
-                <Upload className="w-4 h-4 mr-2" /> Add Files
+                <Upload className="w-4 h-4 mr-2" /> Add More
               </Button>
               <Button 
                 variant="ghost" 
                 size="sm" 
                 onClick={clearAll}
-                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
               >
-                <Trash2 className="w-4 h-4 mr-2" /> Clear All
+                <Trash2 className="w-4 h-4 mr-2" /> Clear Workspace
               </Button>
             </div>
 
             <div className="flex items-center gap-4">
               {allCompleted ? (
                 files.length > 1 ? (
-                  <Button onClick={downloadAllAsZip} className="bg-accent hover:bg-accent/80 text-accent-foreground neon-glow">
-                    <Download className="w-4 h-4 mr-2" /> Download ZIP
+                  <Button onClick={downloadAllAsZip} className="bg-accent hover:bg-accent/80 text-accent-foreground neon-glow rounded-lg h-9 font-bold px-6">
+                    <Download className="w-4 h-4 mr-2" /> Export Bundle (.zip)
                   </Button>
                 ) : (
-                  <Button onClick={() => downloadFile(files[0])} className="bg-accent hover:bg-accent/80 text-accent-foreground neon-glow">
+                  <Button onClick={() => downloadFile(files[0])} className="bg-accent hover:bg-accent/80 text-accent-foreground neon-glow rounded-lg h-9 font-bold px-6">
                     <Download className="w-4 h-4 mr-2" /> Download Result
                   </Button>
                 )
@@ -298,20 +316,20 @@ export function Uploader() {
                 <Button 
                   onClick={startConversion} 
                   disabled={someProcessing}
-                  className="bg-primary hover:bg-primary/80 text-white neon-glow min-w-[140px]"
+                  className="bg-primary hover:bg-primary/80 text-white neon-glow min-w-[160px] rounded-lg h-9 font-bold shadow-lg shadow-primary/20"
                 >
                   {someProcessing ? (
                     <span className="flex items-center gap-2">
-                      <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Converting...
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Optimizing...
                     </span>
-                  ) : "Convert All"}
+                  ) : "Process All Assets"}
                 </Button>
               )}
             </div>
           </div>
 
-          <div className="grid gap-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+          <div className="grid gap-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar pb-4">
             {files.map(item => (
               <FileItem 
                 key={item.id} 
