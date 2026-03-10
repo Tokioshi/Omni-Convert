@@ -159,6 +159,7 @@ export function Uploader() {
             description: "High-quality GIF generated.",
           });
         } else {
+          // Mocking other conversion types
           let currentProgress = 10;
           const interval = setInterval(() => {
             currentProgress += Math.random() * 15;
@@ -197,17 +198,59 @@ export function Uploader() {
     document.body.removeChild(link);
   };
 
-  const downloadAllAsZip = () => {
+  const downloadAllAsZip = async () => {
+    const completedFiles = files.filter(f => f.status === 'completed' && f.resultUrl);
+    if (completedFiles.length === 0) return;
+
     toast({
       title: "Generating Archive",
       description: "Compressing your files into a single ZIP archive. Please wait.",
     });
-    setTimeout(() => {
+
+    try {
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+
+      for (const item of completedFiles) {
+        const fileName = `converted_${item.file.name.split('.')[0]}.${item.outputFormat.toLowerCase()}`;
+        
+        if (item.resultUrl?.startsWith('data:')) {
+          // Data URI
+          const base64Data = item.resultUrl.split(',')[1];
+          zip.file(fileName, base64Data, { base64: true });
+        } else if (item.resultUrl) {
+          // Fetch from object URL or other URL
+          const response = await fetch(item.resultUrl);
+          const blob = await response.blob();
+          zip.file(fileName, blob);
+        }
+      }
+
+      const content = await zip.generateAsync({ type: "blob" });
+      const zipUrl = URL.createObjectURL(content);
+      
+      const link = document.createElement('a');
+      link.href = zipUrl;
+      link.download = "omniconvert_bundle.zip";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Cleanup
+      setTimeout(() => URL.revokeObjectURL(zipUrl), 10000);
+
       toast({
         title: "Download Started",
         description: "Your ZIP archive is ready.",
       });
-    }, 2000);
+    } catch (error) {
+      console.error("ZIP Generation Error", error);
+      toast({
+        variant: "destructive",
+        title: "Bundle Failed",
+        description: "Could not create the ZIP archive.",
+      });
+    }
   };
 
   const allCompleted = files.length > 0 && files.every(f => f.status === 'completed');
