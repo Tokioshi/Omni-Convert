@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useCallback, useRef } from "react";
@@ -10,6 +11,7 @@ import { Upload, Download, Sparkles, Files, Layers, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils";
 import { aiImageCompression } from "@/ai/flows/ai-image-compression-flow";
 import { useToast } from "@/hooks/use-toast";
+import gifshot from 'gifshot';
 
 export function Uploader() {
   const [files, setFiles] = useState<ConversionFile[]>([]);
@@ -81,7 +83,7 @@ export function Uploader() {
 
       try {
         if (item.type === 'image' && item.outputSettings.useAiCompression) {
-          // Actual GenAI Flow
+          // AI Compression Flow
           const reader = new FileReader();
           const base64Promise = new Promise<string>((resolve) => {
             reader.onload = () => resolve(reader.result as string);
@@ -102,8 +104,40 @@ export function Uploader() {
             progress: 100, 
             resultUrl: result.compressedImageDataUri 
           } : f));
+        } else if (item.type === 'video' && item.outputFormat === 'GIF') {
+          // Real Video-to-GIF conversion using gifshot
+          setFiles(prev => prev.map(f => f.id === item.id ? { ...f, progress: 20 } : f));
+          
+          const gifResult = await new Promise<string>((resolve, reject) => {
+            gifshot.createGIF({
+              video: [item.previewUrl],
+              gifWidth: 480,
+              gifHeight: 270,
+              numFrames: 25,
+              frameDuration: 1,
+              sampleInterval: 10,
+              progressCallback: (progress) => {
+                setFiles(prev => prev.map(f => f.id === item.id ? { ...f, progress: 20 + (progress * 70) } : f));
+              }
+            }, (obj: any) => {
+              if (obj.error) reject(new Error(obj.errorMsg));
+              else resolve(obj.image);
+            });
+          });
+
+          setFiles(prev => prev.map(f => f.id === item.id ? { 
+            ...f, 
+            status: 'completed', 
+            progress: 100, 
+            resultUrl: gifResult 
+          } : f));
+
+          toast({
+            title: "Conversion Complete",
+            description: "Video has been successfully converted to a standard GIF.",
+          });
         } else {
-          // Simulated Progress for other conversions
+          // Simulated Progress for other conversions (Mock)
           let currentProgress = 10;
           const interval = setInterval(() => {
             currentProgress += Math.random() * 15;
@@ -113,7 +147,7 @@ export function Uploader() {
                 ...f, 
                 status: 'completed', 
                 progress: 100, 
-                resultUrl: f.previewUrl // Simulate result with preview
+                resultUrl: f.previewUrl 
               } : f));
             } else {
               setFiles(prev => prev.map(f => f.id === item.id ? { ...f, progress: currentProgress } : f));
@@ -123,6 +157,11 @@ export function Uploader() {
       } catch (error) {
         console.error("Conversion error", error);
         setFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'error', error: 'Process failed' } : f));
+        toast({
+          variant: "destructive",
+          title: "Conversion Failed",
+          description: "There was an error processing your file.",
+        });
       }
     }
   };
@@ -142,7 +181,6 @@ export function Uploader() {
       title: "Generating Archive",
       description: "Compressing your files into a single ZIP archive. Please wait.",
     });
-    // In a real app, we'd use JSZip here.
     setTimeout(() => {
       toast({
         title: "Download Started",
