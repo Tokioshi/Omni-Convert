@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { ConversionFile, MediaType, OutputSettings } from "@/lib/types";
 import { FileItem } from "./FileItem";
 import { SettingsDialog } from "./SettingsDialog";
@@ -11,14 +11,18 @@ import { Upload, Download, Sparkles, Files, Layers, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils";
 import { aiImageCompression } from "@/ai/flows/ai-image-compression-flow";
 import { useToast } from "@/hooks/use-toast";
-import gifshot from 'gifshot';
 
 export function Uploader() {
   const [files, setFiles] = useState<ConversionFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [editingFileId, setEditingFileId] = useState<string | null>(null);
+  const [isClient, setIsClient] = useState(false);
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -78,12 +82,18 @@ export function Uploader() {
     const filesToConvert = files.filter(f => f.status === 'idle');
     if (filesToConvert.length === 0) return;
 
+    // Dynamically import gifshot only on the client
+    let gifshot: any = null;
+    if (typeof window !== 'undefined') {
+      const mod = await import('gifshot');
+      gifshot = mod.default || mod;
+    }
+
     for (const item of filesToConvert) {
-      setFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'processing', progress: 10 } : f));
+      setFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'processing', progress: 5 } : f));
 
       try {
         if (item.type === 'image' && item.outputSettings.useAiCompression) {
-          // AI Compression Flow
           const reader = new FileReader();
           const base64Promise = new Promise<string>((resolve) => {
             reader.onload = () => resolve(reader.result as string);
@@ -105,19 +115,35 @@ export function Uploader() {
             resultUrl: result.compressedImageDataUri 
           } : f));
         } else if (item.type === 'video' && item.outputFormat === 'GIF') {
-          // Real Video-to-GIF conversion using gifshot
-          setFiles(prev => prev.map(f => f.id === item.id ? { ...f, progress: 20 } : f));
+          if (!gifshot) throw new Error("Conversion library not available.");
+
+          // 1. Get original video dimensions to fix "chopped" resolution
+          const videoMeta = document.createElement('video');
+          videoMeta.src = item.previewUrl;
+          await new Promise((resolve) => {
+            videoMeta.onloadedmetadata = resolve;
+          });
+
+          const originalWidth = videoMeta.videoWidth;
+          const originalHeight = videoMeta.videoHeight;
+          
+          // Target width while maintaining aspect ratio
+          // We limit max width to 800 for GIF performance, but keep original if smaller
+          const targetWidth = Math.min(originalWidth, 800);
+          const targetHeight = Math.round((originalHeight / originalWidth) * targetWidth);
+
+          setFiles(prev => prev.map(f => f.id === item.id ? { ...f, progress: 15 } : f));
           
           const gifResult = await new Promise<string>((resolve, reject) => {
             gifshot.createGIF({
               video: [item.previewUrl],
-              gifWidth: 480,
-              gifHeight: 270,
-              numFrames: 25,
-              frameDuration: 1,
-              sampleInterval: 10,
-              progressCallback: (progress) => {
-                setFiles(prev => prev.map(f => f.id === item.id ? { ...f, progress: 20 + (progress * 70) } : f));
+              gifWidth: targetWidth,
+              gifHeight: targetHeight,
+              numFrames: 40, // Increased frame count for smoother motion
+              frameDuration: 1, // 10fps
+              sampleInterval: 5, // Lower interval = higher quality colors, reduces Discord glitches
+              progressCallback: (progress: number) => {
+                setFiles(prev => prev.map(f => f.id === item.id ? { ...f, progress: 15 + (progress * 80) } : f));
               }
             }, (obj: any) => {
               if (obj.error) reject(new Error(obj.errorMsg));
@@ -134,7 +160,7 @@ export function Uploader() {
 
           toast({
             title: "Conversion Complete",
-            description: "Video has been successfully converted to a standard GIF.",
+            description: "High-quality GIF generated with preserved aspect ratio.",
           });
         } else {
           // Simulated Progress for other conversions (Mock)
@@ -160,7 +186,7 @@ export function Uploader() {
         toast({
           variant: "destructive",
           title: "Conversion Failed",
-          description: "There was an error processing your file.",
+          description: "There was an error processing your file. Please try again.",
         });
       }
     }
@@ -192,9 +218,10 @@ export function Uploader() {
   const allCompleted = files.length > 0 && files.every(f => f.status === 'completed');
   const someProcessing = files.some(f => f.status === 'processing');
 
+  if (!isClient) return null;
+
   return (
     <div className="w-full max-w-5xl mx-auto space-y-8 px-4 py-8">
-      {/* Central Drop Zone */}
       {files.length === 0 && (
         <Card
           className={cn(
@@ -234,7 +261,6 @@ export function Uploader() {
         </Card>
       )}
 
-      {/* Dashboard View */}
       {files.length > 0 && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="flex items-center justify-between bg-card/40 p-4 rounded-xl glass border-white/5">
